@@ -1,0 +1,10 @@
+country=BR
+ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+update_config=1
+
+# Descomente e preencha abaixo para já incluir a rede Wi-Fi no boot:
+# network={
+#     ssid="NOME_DA_SUA_REDE"
+#     psk="SENHA_DA_REDE"
+#     key_mgmt=WPA-PSK
+# }

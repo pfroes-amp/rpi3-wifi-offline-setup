@@ -1,100 +1,74 @@
 # rpi3-wifi-offline-setup
 
-Prepara o microSD do **Raspberry Pi 3** com os pacotes necessários para ativar o Wi-Fi interno (`wlan0`) sem conexão de internet na placa.
-
-Útil quando o Pi não tem Ethernet disponível e o Wi-Fi ainda não está funcionando — você usa um **adaptador microSD no seu PC Linux** para preparar tudo offline.
+Ativa o Wi-Fi interno (`wlan0`) do **Raspberry Pi 3** sem precisar de internet na placa — usando apenas um **celular** como intermediário.
 
 ---
 
-## O que este repositório faz
+## Como funciona
 
-| Script | Onde roda | O que faz |
-|--------|-----------|-----------|
-| `prepare-sd.sh` | PC Linux (com adaptador microSD) | Monta o SD, baixa os `.deb` e os copia para o rootfs |
-| `install-wifi.sh` | Raspberry Pi (após reinserção do SD) | Instala os pacotes, configura país BR e ativa o NetworkManager |
+O microSD do Raspberry Pi tem **duas partições**:
 
-### Pacotes instalados
-- `firmware-brcm80211` — firmware do chip Wi-Fi Broadcom presente no Pi 3
-- `wpasupplicant` — autenticação WPA/WPA2
-- `network-manager` — gerenciamento de rede (nmcli)
+| Partição | Formato | Acessível por |
+|----------|---------|---------------|
+| `/boot` (~256 MB) | **FAT32** | Celular, Windows, Mac, Linux |
+| root (~resto) | ext4 | Somente Linux |
 
----
-
-## Pré-requisitos
-
-### No PC Linux
-- Adaptador microSD conectado ao PC
-- Acesso à internet (apenas para baixar os `.deb`)
-- `apt` disponível (Debian/Ubuntu/Raspberry Pi OS Desktop)
-- `sudo`
-
-### No Raspberry Pi
-- Raspberry Pi 3 (Model B ou B+)
-- Raspberry Pi OS (Bullseye, Bookworm ou compatível)
-- Acesso a um terminal (HDMI + teclado, ou serial)
+A estratégia é colocar os pacotes `.deb` na partição **boot (FAT32)**, que qualquer celular consegue ler e escrever, e depois instalá-los diretamente do Raspberry Pi.
 
 ---
 
-## Uso
+## Fluxo via Celular (sem PC corporativo)
 
-### Passo 1 — Clonar o repositório no PC
+> Use este fluxo quando você não tem acesso ao PC ou ele está bloqueado por políticas corporativas.
+
+### Passo 1 — Baixar os arquivos no celular
+
+Acesse o arquivo **[DOWNLOAD_LINKS.md](./DOWNLOAD_LINKS.md)** pelo celular e baixe:
+
+- `firmware-brcm80211_*.deb` (~5 MB) — firmware do chip Wi-Fi
+- `wpasupplicant_*_armhf.deb` (~1,2 MB) — autenticação WPA
+- `install-wifi.sh` — script de instalação
+
+> Os links de download estão na página [DOWNLOAD_LINKS.md](./DOWNLOAD_LINKS.md).
+
+### Passo 2 — Copiar para o microSD
+
+1. Insira o microSD no celular (slot ou adaptador OTG/USB-C)
+2. Abra o **gerenciador de arquivos** do celular
+3. Localize o volume **`boot`** (a partição menor, ~256 MB)
+4. Crie uma pasta chamada `rpi-wifi-pkgs` dentro do `boot`
+5. Copie os arquivos `.deb` e o `install-wifi.sh` para essa pasta
+
+A estrutura deve ficar assim:
+
+```
+boot/
+└── rpi-wifi-pkgs/
+    ├── firmware-brcm80211_*.deb
+    ├── wpasupplicant_*_armhf.deb
+    ├── network-manager_*_armhf.deb   (opcional)
+    └── install-wifi.sh
+```
+
+### Passo 3 — Inserir o SD no Raspberry Pi e ligar
+
+Acesse o terminal do Pi via HDMI + teclado ou serial.
+
+### Passo 4 — Executar o script de instalação
 
 ```bash
-git clone https://github.com/pfroes-amp/rpi3-wifi-offline-setup.git
-cd rpi3-wifi-offline-setup
-```
-
-### Passo 2 — Identificar o dispositivo microSD
-
-Conecte o microSD via adaptador e rode:
-
-```bash
-lsblk
-```
-
-Exemplo de saída típica:
-
-```
-NAME   MAJ:MIN RM  SIZE RO TYPE MOUNTPOINT
-sdb      8:16   1 29,7G  0 disk
-├─sdb1   8:17   1  256M  0 part          ← boot (FAT32)
-└─sdb2   8:18   1 29,4G  0 part          ← root (ext4)
-```
-
-> **Atenção:** certifique-se de usar o dispositivo correto (`/dev/sdb`, `/dev/sdc`, etc.).  
-> Usar o dispositivo errado pode sobrescrever dados do seu PC.
-
-### Passo 3 — Executar o script no PC
-
-```bash
-sudo bash prepare-sd.sh /dev/sdb
+sudo bash /boot/rpi-wifi-pkgs/install-wifi.sh
 ```
 
 O script irá:
-1. Detectar automaticamente as partições boot e root
-2. Montar o rootfs em `/mnt/rpi`
-3. Baixar `firmware-brcm80211`, `network-manager` e `wpasupplicant`
-4. Copiar os `.deb` e o `install-wifi.sh` para `/root/rpi-wifi-pkgs/` no SD
-5. Desmontar o SD com segurança
+- Encontrar automaticamente os pacotes em `/boot/rpi-wifi-pkgs/`
+- Instalar via `dpkg`
+- Configurar `country=BR`
+- Habilitar e reiniciar o NetworkManager
+- Desbloquear rfkill
+- Exibir o status das interfaces
 
-### Passo 4 — Inserir o SD no Raspberry Pi e ligar
-
-Acesse o terminal do Pi (via HDMI+teclado ou serial/SSH por Ethernet).
-
-### Passo 5 — Executar o script no Raspberry Pi
-
-```bash
-sudo bash /root/rpi-wifi-pkgs/install-wifi.sh
-```
-
-O script irá:
-1. Instalar os pacotes `.deb` offline via `dpkg`
-2. Configurar `country=BR` no wpa_supplicant e no domínio regulatório
-3. Habilitar e reiniciar o NetworkManager
-4. Recarregar o módulo `brcmfmac`
-5. Exibir status das interfaces
-
-### Passo 6 — Reiniciar e verificar
+### Passo 5 — Reiniciar e verificar
 
 ```bash
 sudo reboot
@@ -105,10 +79,9 @@ Após reiniciar:
 ```bash
 iw dev
 nmcli dev status
-ip link
 ```
 
-`wlan0` deve aparecer. Para conectar a uma rede:
+`wlan0` deve aparecer. Para conectar:
 
 ```bash
 nmcli dev wifi list
@@ -117,61 +90,123 @@ nmcli dev wifi connect 'NOME_DA_REDE' password 'SENHA'
 
 ---
 
+## Fluxo via PC Linux (com adaptador microSD)
+
+> Use este fluxo quando tiver acesso a um PC Linux com internet e um adaptador microSD.
+
+### Passo 1 — Clonar o repositório
+
+```bash
+git clone https://github.com/pfroes-amp/rpi3-wifi-offline-setup.git
+cd rpi3-wifi-offline-setup
+```
+
+### Passo 2 — Identificar o dispositivo
+
+```bash
+lsblk
+# Exemplo: /dev/sdb com sdb1 (FAT32/boot) e sdb2 (ext4/root)
+```
+
+> **Atenção:** certifique-se do dispositivo correto antes de executar.
+
+### Passo 3a — Copiar para a partição boot (recomendado — sem necessidade de root ext4)
+
+```bash
+sudo bash prepare-sd.sh /dev/sdb --boot
+```
+
+### Passo 3b — Copiar para a partição root (alternativa, requer Linux)
+
+```bash
+sudo bash prepare-sd.sh /dev/sdb --root
+```
+
+### Passo 4 — Instalar no Pi
+
+No Raspberry Pi:
+
+```bash
+# Se usou --boot:
+sudo bash /boot/rpi-wifi-pkgs/install-wifi.sh
+
+# Se usou --root:
+sudo bash /root/rpi-wifi-pkgs/install-wifi.sh
+```
+
+---
+
+## Arquivos do repositório
+
+```
+rpi3-wifi-offline-setup/
+├── DOWNLOAD_LINKS.md             ← Links diretos para baixar pelo celular
+├── install-wifi.sh               ← Roda no Raspberry Pi — instala e configura
+├── prepare-sd.sh                 ← Roda no PC Linux — baixa e copia pacotes
+├── wpa_supplicant.conf.template  ← Template de configuração Wi-Fi (opcional)
+└── README.md
+```
+
+---
+
 ## Solução de problemas
 
 ### `wlan0` não aparece após reboot
 
-Verifique se o firmware foi carregado:
 ```bash
-dmesg | grep brcmfmac
-lsmod | grep brcm
+dmesg | grep brcmfmac          # firmware carregou?
+lsmod | grep brcm              # módulo está ativo?
+rfkill list                    # interface está bloqueada por rfkill?
+sudo rfkill unblock wifi       # desbloquear se necessário
 ```
 
-Tente recarregar o módulo:
-```bash
-sudo modprobe -r brcmfmac && sudo modprobe brcmfmac
-```
+### Interface bloqueada (rfkill: yes)
 
-### Conflito com `ifupdown`
-
-Se `/etc/network/interfaces` tiver entradas para `wlan0`, elas podem conflitar com o NetworkManager. O `install-wifi.sh` já remove essas entradas automaticamente (com backup), mas você pode conferir:
-
-```bash
-cat /etc/network/interfaces
-```
-
-### `apt download` falha no PC
-
-Se seu PC não tiver o repositório Raspberry Pi configurado, baixe os `.deb` manualmente de:
-- https://packages.debian.org/firmware-brcm80211
-- https://packages.debian.org/network-manager
-- https://packages.debian.org/wpasupplicant
-
-Coloque os arquivos `.deb` numa pasta e copie manualmente para `/root/rpi-wifi-pkgs/` no SD.
-
-### Usar `raspi-config` manualmente
-
-Se preferir configurar o país pelo menu interativo após instalar os pacotes:
+Geralmente indica que o país WLAN não foi configurado:
 
 ```bash
 sudo raspi-config
 # Localisation Options → WLAN Country → BR
+sudo reboot
+```
+
+### Conflito com `ifupdown` / `dhcpcd`
+
+Se o sistema usar `dhcpcd` junto com NetworkManager:
+
+```bash
+# Ver qual gerenciador está ativo:
+systemctl status NetworkManager dhcpcd
+
+# Desativar dhcpcd se quiser usar só NetworkManager:
+sudo systemctl disable dhcpcd
+sudo systemctl stop dhcpcd
+sudo systemctl restart NetworkManager
+```
+
+### Espaço insuficiente na partição boot
+
+A partição `/boot` tem ~256 MB. Os pacotes ocupam ~8 MB no total — deve sobrar espaço.
+
+Se necessário, libere espaço removendo arquivos antigos de kernel de `/boot` antes de copiar:
+
+```bash
+ls -lh /boot/*.deb 2>/dev/null   # ver se já há .deb antigos para remover
+```
+
+### Baixar apenas o firmware (solução mínima)
+
+Se `wpa_supplicant` e `network-manager` já estiverem instalados, pode ser suficiente apenas o firmware:
+
+```bash
+sudo dpkg -i /boot/rpi-wifi-pkgs/firmware-brcm80211_*.deb
+sudo raspi-config nonint do_wifi_country BR
+sudo reboot
 ```
 
 ---
 
-## Estrutura do repositório
-
-```
-rpi3-wifi-offline-setup/
-├── prepare-sd.sh      # Roda no PC Linux — monta SD, baixa e copia pacotes
-├── install-wifi.sh    # Roda no Raspberry Pi — instala e configura Wi-Fi
-└── README.md          # Este arquivo
-```
-
----
-
-## Compatibilidade testada
+## Compatibilidade
 
 | Sistema | Status |
 |---------|--------|
